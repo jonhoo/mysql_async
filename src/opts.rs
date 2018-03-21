@@ -9,13 +9,10 @@
 use consts::CapabilityFlags;
 use errors::*;
 
-use local_infile_handler::{LocalInfileHandler, LocalInfileHandlerObject};
-
 use std::borrow::Cow;
 use std::path::Path;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::str::FromStr;
-use std::sync::Arc;
 
 use url::Url;
 use url::percent_encoding::percent_decode;
@@ -114,9 +111,6 @@ pub struct Opts {
     /// some cost to maximum throughput. See blackbeam/rust-mysql-simple#132.
     tcp_nodelay: bool,
 
-    /// Local infile handler
-    local_infile_handler: Option<LocalInfileHandlerObject>,
-
     /// Lower bound of opened connections for `Pool` (defaults to 10).
     pool_min: usize,
 
@@ -199,11 +193,6 @@ impl Opts {
         self.tcp_nodelay
     }
 
-    /// Local infile handler
-    pub fn get_local_infile_handler(&self) -> Option<Arc<LocalInfileHandler>> {
-        self.local_infile_handler.as_ref().map(|x| x.clone_inner())
-    }
-
     /// Lower bound of opened connections for `Pool` (defaults to 10).
     pub fn get_pool_min(&self) -> usize {
         self.pool_min
@@ -265,7 +254,6 @@ impl Default for Opts {
             init: vec![],
             tcp_keepalive: None,
             tcp_nodelay: true,
-            local_infile_handler: None,
             pool_min: 10,
             pool_max: 100,
             conn_ttl: None,
@@ -351,15 +339,6 @@ impl OptsBuilder {
     /// latency (~40ms) but may increase maximum throughput. See #132.
     pub fn tcp_nodelay(&mut self, nodelay: bool) -> &mut Self {
         self.opts.tcp_nodelay = nodelay;
-        self
-    }
-
-    /// Handler for local infile requests (defaults to `None`).
-    pub fn local_infile_handler<T>(&mut self, handler: Option<T>) -> &mut Self
-    where
-        T: LocalInfileHandler + 'static,
-    {
-        self.opts.local_infile_handler = handler.map(LocalInfileHandlerObject::new);
         self
     }
 

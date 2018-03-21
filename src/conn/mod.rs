@@ -16,7 +16,6 @@ use errors::*;
 use io::Stream;
 use lib_futures::future::{Future, IntoFuture, Loop, loop_fn, ok};
 use lib_futures::future::Either::*;
-use local_infile_handler::LocalInfileHandler;
 use myc::packets::{parse_handshake_packet, HandshakeResponse, SslRequest};
 use myc::scramble::scramble;
 use opts::Opts;
@@ -372,10 +371,6 @@ impl ConnectionLike for Conn {
         self.last_command
     }
 
-    fn get_local_infile_handler(&self) -> Option<Arc<LocalInfileHandler>> {
-        self.opts.get_local_infile_handler()
-    }
-
     fn get_max_allowed_packet(&self) -> u64 {
         self.max_allowed_packet
     }
@@ -447,7 +442,6 @@ mod test {
     use OptsBuilder;
     #[cfg(feature = "ssl")]
     use SslOpts;
-    use WhiteListFsLocalInfileHandler;
     use from_row;
     use prelude::*;
     use lib_futures::Future;
@@ -955,47 +949,6 @@ mod test {
                 conn
             })
             .and_then(Queryable::disconnect);
-
-        lp.run(fut).unwrap();
-    }
-
-    #[test]
-    fn should_handle_local_infile() {
-        use std::io::Write;
-
-        let mut lp = Core::new().unwrap();
-        let mut opts = OptsBuilder::from_opts(get_opts());
-        opts.local_infile_handler(Some(WhiteListFsLocalInfileHandler::new(
-            &["local_infile.txt"][..],
-            &lp.handle(),
-        )));
-
-        let fut = Conn::new(opts, &lp.handle())
-            .and_then(|conn| {
-                Queryable::drop_query(conn, "CREATE TEMPORARY TABLE tmp (a TEXT);")
-            })
-            .and_then(|conn| {
-                let mut file = ::std::fs::File::create("local_infile.txt").unwrap();
-                let _ = file.write(b"AAAAAA\n");
-                let _ = file.write(b"BBBBBB\n");
-                let _ = file.write(b"CCCCCC\n");
-                Queryable::drop_query(
-                    conn,
-                    "LOAD DATA LOCAL INFILE 'local_infile.txt' INTO TABLE tmp;",
-                )
-            })
-            .and_then(|conn| Queryable::prep_exec(conn, "SELECT * FROM tmp;", ()))
-            .and_then(|result| {
-                result.map_and_drop(|row| from_row::<(String,)>(row).0)
-            })
-            .and_then(|(conn, result)| {
-                assert_eq!(result.len(), 3);
-                assert_eq!(result[0], "AAAAAA");
-                assert_eq!(result[1], "BBBBBB");
-                assert_eq!(result[2], "CCCCCC");
-                let _ = ::std::fs::remove_file("local_infile.txt");
-                Queryable::disconnect(conn)
-            });
 
         lp.run(fut).unwrap();
     }

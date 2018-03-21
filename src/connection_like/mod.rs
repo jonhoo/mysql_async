@@ -14,9 +14,8 @@ use errors::*;
 use io;
 use lib_futures::future::{Future, IntoFuture, Loop, err, ok, loop_fn};
 use lib_futures::future::Either::*;
-use local_infile_handler::LocalInfileHandler;
 use myc::io::ReadMysqlExt;
-use myc::packets::{Column, RawPacket, column_from_payload, parse_local_infile_packet};
+use myc::packets::{Column, RawPacket, column_from_payload};
 use queryable::Protocol;
 use queryable::query_result::{self, QueryResult};
 use queryable::stmt::InnerStmt;
@@ -25,7 +24,6 @@ use self::streamless::Streamless;
 use self::write_packet::WritePacket;
 use std::sync::Arc;
 use conn::stmt_cache::StmtCache;
-use tokio_io::io::read;
 
 pub mod read_packet;
 pub mod streamless {
@@ -109,10 +107,6 @@ where
         self.conn_like_ref().get_last_insert_id()
     }
 
-    fn get_local_infile_handler(&self) -> Option<Arc<LocalInfileHandler>> {
-        self.conn_like_ref().get_local_infile_handler()
-    }
-
     fn get_max_allowed_packet(&self) -> u64 {
         self.conn_like_ref().get_max_allowed_packet()
     }
@@ -190,7 +184,6 @@ pub trait ConnectionLike {
     fn get_in_transaction(&self) -> bool;
     fn get_last_command(&self) -> Command;
     fn get_last_insert_id(&self) -> Option<u64>;
-    fn get_local_infile_handler(&self) -> Option<Arc<LocalInfileHandler>>; // TODO: Switch to Rc?
     fn get_max_allowed_packet(&self) -> u64;
     fn get_opts(&self) -> &Opts;
     fn get_pending_result(&self) -> Option<&(Arc<Vec<Column>>, Option<StmtCacheResult>)>;
@@ -383,44 +376,8 @@ pub trait ConnectionLike {
     {
         let fut = self.read_packet().and_then(
             |(this, packet)| match packet.0[0] {
-                0x00 => A(A(ok(query_result::new(this, None, cached)))),
-                0xFB => {
-                    let fut = parse_local_infile_packet(&*packet.0)
-                        .chain_err(|| Error::from(ErrorKind::UnexpectedPacket))
-                        .and_then(|local_infile| match this.get_local_infile_handler() {
-                            Some(handler) => handler.handle(local_infile.file_name_ref()),
-                            None => Err(ErrorKind::NoLocalInfileHandler.into()),
-                        })
-                        .into_future()
-                        .and_then(|reader| {
-                            let mut buf = Vec::with_capacity(4096);
-                            unsafe {
-                                buf.set_len(4096);
-                            }
-                            loop_fn((this, buf, reader), |(this, buf, reader)| {
-                                read(reader, buf)
-                                    .map_err(Into::into)
-                                    .and_then(|(reader, mut buf, count)| {
-                                        unsafe {
-                                            buf.set_len(count);
-                                        }
-                                        (
-                                            this.write_packet(&buf[..count]),
-                                            ok(buf),
-                                            ok(reader),
-                                            ok(count),
-                                        )
-                                    })
-                                    .map(|(this, buf, reader, count)| if count > 0 {
-                                        Loop::Continue((this, buf, reader))
-                                    } else {
-                                        Loop::Break(this)
-                                    })
-                            }).and_then(|this| this.read_packet())
-                                .map(|(this, _)| query_result::new(this, None, cached))
-                        });
-                    A(B(fut))
-                }
+                0x00 => A(ok(query_result::new(this, None, cached))),
+                0xFB => unimplemented!(),
                 _ => {
                     let fut = (&*packet.0)
                         .read_lenenc_int()

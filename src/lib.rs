@@ -208,7 +208,6 @@ mod connection_like;
 /// Errors used in this crate
 pub mod errors;
 mod io;
-mod local_infile_handler;
 mod opts;
 mod queryable;
 
@@ -225,9 +224,6 @@ pub use self::queryable::transaction::IsolationLevel;
 
 #[doc(inline)]
 pub use self::opts::{Opts, OptsBuilder, SslOpts};
-
-#[doc(inline)]
-pub use self::local_infile_handler::builtin::WhiteListFsLocalInfileHandler;
 
 #[doc(inline)]
 pub use myc::packets::Column;
@@ -276,8 +272,6 @@ pub mod prelude {
     pub use myc::row::convert::FromRow;
     #[doc(inline)]
     pub use queryable::Queryable;
-    #[doc(inline)]
-    pub use local_infile_handler::LocalInfileHandler;
 }
 
 #[cfg(test)]
